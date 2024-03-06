@@ -123,26 +123,25 @@ class UsbEndpointUnderlyingSource implements UnderlyingByteSource {
    */
   pull(controller: ReadableByteStreamController): void {
     (async (): Promise<void> => {
-      let chunkSize;
-      if (controller.desiredSize) {
-        const d = controller.desiredSize / this.endpoint_.packetSize;
-        chunkSize = Math.ceil(d) * this.endpoint_.packetSize;
-      } else {
-        chunkSize = this.endpoint_.packetSize;
-      }
+      const desiredSize = (controller.desiredSize || this.endpoint_.packetSize);
+      let chunkCount = Math.ceil(desiredSize / this.endpoint_.packetSize);
 
       try {
-        const result = await this.device_.transferIn(
-            this.endpoint_.endpointNumber, chunkSize);
-        if (result.status != 'ok') {
-          controller.error(`USB error: ${result.status}`);
-          this.onError_();
-        }
-        if (result.data?.buffer) {
-          const chunk = new Uint8Array(
-              result.data.buffer, result.data.byteOffset,
-              result.data.byteLength);
-          controller.enqueue(chunk);
+        while (chunkCount) {
+          const result = await this.device_.transferIn(
+              this.endpoint_.endpointNumber, this.endpoint_.packetSize);
+          if (result.status != 'ok') {
+            controller.error(`USB error: ${result.status}`);
+            this.onError_();
+            break;
+          }
+          if (result.data?.buffer && result.data.byteLength > 0) {
+            const chunk = new Uint8Array(
+                result.data.buffer, result.data.byteOffset,
+                result.data.byteLength);
+            controller.enqueue(chunk);
+            chunkCount--;
+          }
         }
       } catch (error) {
         controller.error(error.toString());
